@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulse — Live Fundamentals &amp; Bias Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="hall">
+
+  <!-- ============ HEADER ============ -->
+  <header class="masthead">
+    <div class="masthead-left">
+      <span class="mark">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M2 12h4l2-7 4 14 3-10 2 5h5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <div class="masthead-title">
+        <span class="masthead-name">Pulse</span>
+        <span class="masthead-sub">fundamentals &amp; bias engine</span>
+      </div>
+    </div>
+
+    <nav class="tabs" id="tabNav">
+      <button class="tab is-active" data-tab="overview">Overview</button>
+      <button class="tab" data-tab="pairs">Pairs</button>
+      <button class="tab" data-tab="markets">Markets</button>
+      <button class="tab" data-tab="wire">Wire</button>
+      <button class="tab" data-tab="calendar">Calendar</button>
+      <button class="tab" data-tab="sources">Sources</button>
+    </nav>
+
+    <div class="masthead-right">
+      <span class="status-dot" id="statusDot"></span>
+      <span class="status-text mono" id="statusText">loading…</span>
+      <button class="refresh-btn" id="refreshBtn" title="Refresh data">↻</button>
+    </div>
+  </header>
+
+  <!-- ============ MAIN ============ -->
+  <main class="floor">
+
+    <!-- ---------- OVERVIEW ---------- -->
+    <section class="pane is-active" id="pane-overview">
+
+      <div class="hero">
+        <p class="eyebrow">Live · derived from this week's calendar + news wire</p>
+        <h1>Currency strength, right now</h1>
+        <p class="hero-sub">Every one of the 28 pairs below is just the gap between two of these eight bars. Rank shifts when data refreshes.</p>
+      </div>
+
+      <div class="panel meter-panel">
+        <div class="meter-head">
+          <p class="panel-title">Strength meter</p>
+          <span class="panel-hint mono">0–100 · 50 = neutral</span>
+        </div>
+        <div id="strengthMeter" class="strength-meter"></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <p class="panel-title">Top bias right now <span class="panel-hint mono">strongest reads</span></p>
+          <div id="topMovers" class="mover-list"></div>
+        </div>
+        <div class="panel">
+          <p class="panel-title">Latest on the wire <span class="panel-hint mono">last 6 headlines</span></p>
+          <div id="overviewWire" class="wire-mini"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- PAIRS ---------- -->
+    <section class="pane" id="pane-pairs">
+      <header class="pane-head">
+        <div>
+          <p class="eyebrow">All 28 combinations of 8 currencies</p>
+          <h1>Pair bias</h1>
+        </div>
+        <input type="text" id="pairFilter" class="filter-input" placeholder="Filter, e.g. JPY">
+      </header>
+      <div class="panel">
+        <table class="data-table" id="pairTable">
+          <thead>
+            <tr><th>Pair</th><th>Bias</th><th>Buy / Sell</th><th>Score gap</th><th>Why</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ---------- MARKETS ---------- -->
+    <section class="pane" id="pane-markets">
+      <header class="pane-head">
+        <div>
+          <p class="eyebrow">Indices · metals · commodities · crypto</p>
+          <h1>Other markets</h1>
+        </div>
+      </header>
+      <div class="asset-groups" id="assetGroups"></div>
+    </section>
+
+    <!-- ---------- WIRE ---------- -->
+    <section class="pane" id="pane-wire">
+      <header class="pane-head">
+        <div>
+          <p class="eyebrow">Aggregated from the free sources listed under Sources</p>
+          <h1>News wire</h1>
+        </div>
+        <select id="wireFilter" class="filter-input">
+          <option value="all">All currencies</option>
+        </select>
+      </header>
+      <div class="panel">
+        <div id="wireFull" class="wire-list"></div>
+      </div>
+    </section>
+
+    <!-- ---------- CALENDAR ---------- -->
+    <section class="pane" id="pane-calendar">
+      <header class="pane-head">
+        <div>
+          <p class="eyebrow">This week · actual vs. forecast</p>
+          <h1>Economic calendar</h1>
+        </div>
+      </header>
+      <div class="panel">
+        <table class="data-table" id="calendarTable">
+          <thead>
+            <tr><th>Date</th><th>Currency</th><th>Impact</th><th>Event</th><th>Actual</th><th>Forecast</th><th>Previous</th><th>Read</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ---------- SOURCES ---------- -->
+    <section class="pane" id="pane-sources">
+      <header class="pane-head">
+        <div>
+          <p class="eyebrow">How this dashboard actually works</p>
+          <h1>Sources &amp; method</h1>
+        </div>
+      </header>
+
+      <div class="grid-2">
+        <div class="panel">
+          <p class="panel-title">Data feeds</p>
+          <div id="sourceHealth" class="source-list"></div>
+        </div>
+        <div class="panel">
+          <p class="panel-title">How bias is computed</p>
+          <ol class="method-list">
+            <li>Pull this week's economic calendar (actual vs. forecast for CPI, GDP, jobs, rate decisions) for all 8 currencies.</li>
+            <li>Pull live headlines from the forex news wires listed on the left.</li>
+            <li>Score each currency: calendar beats/misses (weighted by impact) plus keyword sentiment in headlines, mapped to central banks and countries.</li>
+            <li>Every pair's bias is just the gap between its two currencies' scores. Indices, metals, oil, and crypto get their own keyword read.</li>
+          </ol>
+          <p class="method-caveat">This is a rule-based estimate, not a broker's live order book — treat it as a fundamentals summary to speed up your own read, not a signal to trade blindly.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
