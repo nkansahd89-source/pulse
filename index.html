@@ -30,6 +30,7 @@
       <button class="tab" data-tab="markets">Markets</button>
       <button class="tab" data-tab="wire">Wire</button>
       <button class="tab" data-tab="calendar">Calendar</button>
+      <button class="tab" data-tab="risk">Position Size</button>
       <button class="tab" data-tab="sources">Sources</button>
     </nav>
 
@@ -76,7 +77,7 @@
     <section class="pane" id="pane-pairs">
       <header class="pane-head">
         <div>
-          <p class="eyebrow">All 28 combinations of 8 currencies</p>
+          <p class="eyebrow">All 28, alphabetical &middot; click a row for the technical read + news behind it</p>
           <h1>Pair bias</h1>
         </div>
         <input type="text" id="pairFilter" class="filter-input" placeholder="Filter, e.g. JPY">
@@ -136,6 +137,70 @@
       </div>
     </section>
 
+    <!-- ---------- POSITION SIZE ---------- -->
+    <section class="pane" id="pane-risk">
+      <header class="pane-head">
+        <div>
+          <p class="eyebrow">Size the position before you place it &middot; works across all 28 pairs</p>
+          <h1>Position size calculator</h1>
+        </div>
+      </header>
+
+      <div class="grid-2">
+        <div class="panel">
+          <p class="panel-title">Inputs</p>
+          <div class="field-grid">
+            <label>Account balance (USD)
+              <input type="number" id="rcBalance" value="1000" min="0" step="10">
+            </label>
+            <label>Risk per trade (%)
+              <input type="number" id="rcRiskPct" value="1" min="0.1" step="0.1">
+            </label>
+            <label>Stop loss (pips)
+              <input type="number" id="rcStopPips" value="30" min="1" step="1">
+            </label>
+            <label>Lot type
+              <select id="rcLotType">
+                <option value="100000">Standard (100k)</option>
+                <option value="10000">Mini (10k)</option>
+                <option value="1000">Micro (1k)</option>
+              </select>
+            </label>
+            <label>Pair
+              <select id="rcPair"></select>
+            </label>
+            <label>1 unit of quote currency = ? USD
+              <input type="number" id="rcQuoteRate" step="0.0001">
+            </label>
+          </div>
+          <p class="risk-note">Quote-currency rate defaults to an approximate current level — edit it to today's actual rate for precision. Only the quote currency (second half of the pair) matters for pip value.</p>
+        </div>
+        <div class="panel risk-out">
+          <p class="panel-title">Result</p>
+          <div class="risk-result">
+            <div>
+              <span class="kpi-label">Risk amount</span>
+              <span class="kpi-value mono" id="rcRiskAmount">—</span>
+            </div>
+            <div>
+              <span class="kpi-label">Pip value</span>
+              <span class="kpi-value mono" id="rcPipValue">—</span>
+            </div>
+          </div>
+          <div class="risk-result">
+            <div>
+              <span class="kpi-label">Position size</span>
+              <span class="kpi-value mono" id="rcLots">—</span>
+            </div>
+            <div>
+              <span class="kpi-label">Units</span>
+              <span class="kpi-value mono" id="rcUnits">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ---------- SOURCES ---------- -->
     <section class="pane" id="pane-sources">
       <header class="pane-head">
@@ -164,6 +229,51 @@
     </section>
 
   </main>
+</div>
+
+<!-- ============ PAIR DETAIL MODAL ============ -->
+<div class="modal-back" id="pairModalBack">
+  <div class="modal pair-modal">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow" id="pmEyebrow">Fundamental + technical read</p>
+        <h1 id="pmTitle">EUR/USD</h1>
+      </div>
+      <button class="ghost-btn" id="pmClose">Close</button>
+    </div>
+
+    <div class="pm-badges">
+      <div class="pm-badge-col">
+        <span class="kpi-label">Fundamental bias</span>
+        <span class="badge" id="pmFundBadge">—</span>
+        <span class="mono pm-pct" id="pmFundPct">—</span>
+      </div>
+      <div class="pm-badge-col">
+        <span class="kpi-label">Technical bias <span id="pmTfLabel"></span></span>
+        <span class="badge" id="pmTechBadge">—</span>
+        <span class="mono pm-pct" id="pmTechPct">—</span>
+      </div>
+      <div class="pm-badge-col">
+        <span class="kpi-label">Hybrid read</span>
+        <span class="badge" id="pmHybridBadge">—</span>
+        <span class="mono pm-pct" id="pmHybridPct">—</span>
+      </div>
+    </div>
+
+    <div class="tf-select" id="tfSelect">
+      <button class="tf-btn" data-tf="15m">15M</button>
+      <button class="tf-btn" data-tf="1h">1H</button>
+      <button class="tf-btn" data-tf="4h">4H</button>
+      <button class="tf-btn" data-tf="1d">Daily</button>
+    </div>
+    <p class="pm-tech-detail mono" id="pmTechDetail">Pick a timeframe to fetch live price data.</p>
+
+    <div class="pm-section">
+      <p class="panel-title">Why this fundamental read <span class="panel-hint mono">calendar + headlines</span></p>
+      <div id="pmCalendar" class="pm-calendar"></div>
+      <div id="pmNews" class="wire-list"></div>
+    </div>
+  </div>
 </div>
 
 <script src="script.js"></script>

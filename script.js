@@ -319,7 +319,7 @@ function computePairBias(strength){
       symbol: base + quote, base, quote, diff,
       buyPct, sellPct: 100 - buyPct, bias
     };
-  });
+  }).sort((a, b) => a.symbol.localeCompare(b.symbol));
 }
 
 function whyText(strength, base, quote){
@@ -528,7 +528,7 @@ function renderPairTable(){
   const filterVal = (document.getElementById('pairFilter').value || '').toUpperCase();
   const rows = state.pairs.filter(p => p.symbol.includes(filterVal));
   tbody.innerHTML = rows.map(p => `
-    <tr>
+    <tr data-symbol="${p.symbol}">
       <td class="pair-symbol">${p.base}/${p.quote}</td>
       <td><span class="badge ${p.bias.cls}">${p.bias.label}</span></td>
       <td>
@@ -540,6 +540,10 @@ function renderPairTable(){
       <td class="mono">${p.diff > 0 ? '+' : ''}${p.diff}</td>
       <td class="why-cell">${whyText(state.strength, p.base, p.quote)}</td>
     </tr>`).join('');
+
+  tbody.querySelectorAll('tr').forEach(tr => {
+    tr.addEventListener('click', () => openPairDetail(tr.dataset.symbol));
+  });
 }
 
 function assetCardHtml(symbol, name, score){
@@ -647,3 +651,232 @@ document.getElementById('refreshBtn').addEventListener('click', async () => {
 });
 
 loadData(false);
+
+/* ============================================================
+   UPDATE: technical engine (Yahoo Finance chart data, free/keyless)
+   + pair detail modal + position size calculator
+   ============================================================ */
+
+async function fetchYahooCandles(ticker, interval, range){
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${range}&interval=${interval}`;
+  const raw = await fetchWithFallback(url);
+  const data = JSON.parse(raw);
+  const result = data && data.chart && data.chart.result && data.chart.result[0];
+  if (!result) throw new Error('no chart data for ' + ticker);
+  const closesRaw = (result.indicators && result.indicators.quote && result.indicators.quote[0].close) || [];
+  const closes = closesRaw.filter(c => c !== null && c !== undefined);
+  return { closes };
+}
+
+// Take every Nth close counting backward from "now" — a light approximation
+// of resampling to a longer bar (e.g. 4 hourly closes -> one 4H close).
+function resampleEvery(arr, n){
+  const out = [];
+  for (let i = arr.length - 1; i >= 0; i -= n) out.unshift(arr[i]);
+  return out;
+}
+
+function smaLast(closes, period){
+  if (closes.length < period) return null;
+  const slice = closes.slice(-period);
+  return slice.reduce((a, b) => a + b, 0) / period;
+}
+
+// Simplified RSI (simple average of gains/losses over the period, not Wilder's
+// smoothing) — good enough for a directional read, not a precise indicator.
+function rsiLast(closes, period){
+  if (closes.length < period + 1) return null;
+  let gains = 0, losses = 0;
+  for (let i = closes.length - period; i < closes.length; i++){
+    const d = closes[i] - closes[i - 1];
+    if (d >= 0) gains += d; else losses -= d;
+  }
+  const avgGain = gains / period, avgLoss = losses / period;
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
+}
+
+const TF_PARAMS = {
+  '15m': {interval:'15m', range:'5d'},
+  '1h':  {interval:'60m', range:'30d'},
+  '1d':  {interval:'1d',  range:'6mo'}
+};
+
+async function technicalReadForPair(symbol, tfKey){
+  const ticker = symbol + '=X';
+  let closes;
+  if (tfKey === '4h'){
+    const raw = await fetchYahooCandles(ticker, '60m', '60d');
+    closes = resampleEvery(raw.closes, 4);
+  } else {
+    const p = TF_PARAMS[tfKey];
+    const raw = await fetchYahooCandles(ticker, p.interval, p.range);
+    closes = raw.closes;
+  }
+  if (!closes || closes.length < 20) throw new Error('not enough candles for ' + symbol);
+
+  const last = closes[closes.length - 1];
+  const sma20 = smaLast(closes, 20);
+  const sma50 = closes.length >= 50 ? smaLast(closes, 50) : null;
+  const rsiVal = rsiLast(closes, 14);
+
+  let trendSignal = 0;
+  if (sma50 !== null){
+    if (last > sma20 && sma20 > sma50) trendSignal = 1;
+    else if (last < sma20 && sma20 < sma50) trendSignal = -1;
+  } else {
+    trendSignal = last > sma20 ? 1 : (last < sma20 ? -1 : 0);
+  }
+  let momentumSignal = 0;
+  if (rsiVal !== null){
+    if (rsiVal > 60) momentumSignal = 1;
+    else if (rsiVal < 40) momentumSignal = -1;
+  }
+
+  const score = Math.round(clamp(50 + trendSignal * 20 + momentumSignal * 15, 5, 95));
+  const detail = `price ${last.toFixed(4)} vs SMA20 ${sma20.toFixed(4)}` +
+    (sma50 !== null ? ` / SMA50 ${sma50.toFixed(4)}` : ' (SMA50 needs more history)') +
+    ` · RSI(14) ${rsiVal !== null ? rsiVal.toFixed(0) : '—'}`;
+
+  return { score, detail };
+}
+
+/* ---------- pair detail modal ---------- */
+
+let modalPair = null;
+
+function openPairDetail(symbol){
+  const pair = state.pairs.find(p => p.symbol === symbol);
+  if (!pair) return;
+  modalPair = pair;
+
+  document.getElementById('pmTitle').textContent = `${pair.base}/${pair.quote}`;
+  const fundBadge = document.getElementById('pmFundBadge');
+  fundBadge.className = 'badge ' + pair.bias.cls;
+  fundBadge.textContent = pair.bias.label;
+  document.getElementById('pmFundPct').textContent = `${pair.buyPct}% buy / ${pair.sellPct}% sell`;
+
+  const techBadge = document.getElementById('pmTechBadge');
+  techBadge.className = 'badge neutral'; techBadge.textContent = '—';
+  document.getElementById('pmTechPct').textContent = '—';
+  const hybridBadge = document.getElementById('pmHybridBadge');
+  hybridBadge.className = 'badge neutral'; hybridBadge.textContent = '—';
+  document.getElementById('pmHybridPct').textContent = '—';
+  document.getElementById('pmTfLabel').textContent = '';
+  document.getElementById('pmTechDetail').textContent = 'Pick a timeframe to fetch live price data (15M–Daily).';
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('is-active'));
+
+  renderPairWhy(pair);
+  document.getElementById('pairModalBack').classList.add('is-open');
+}
+
+function closePairDetail(){
+  document.getElementById('pairModalBack').classList.remove('is-open');
+}
+
+function renderPairWhy(pair){
+  const calEl = document.getElementById('pmCalendar');
+  const newsEl = document.getElementById('pmNews');
+  const ccys = [pair.base, pair.quote];
+
+  const events = state.calendarEvents.filter(e => ccys.includes((e.country || '').toUpperCase()));
+  calEl.innerHTML = events.length ? events.slice(0, 8).map(e => `
+    <div class="pm-cal-row">
+      <span>${e.country} · ${e.title}</span>
+      <span class="mono">${e.actual ?? '—'} vs ${e.forecast ?? '—'} fc</span>
+    </div>`).join('') : '<p class="empty-note">No calendar events matched this week for these two currencies.</p>';
+
+  const kws = [...CCY_KEYWORDS[pair.base], ...CCY_KEYWORDS[pair.quote]];
+  const matched = state.news.filter(h => {
+    const text = (h.title + ' ' + (h.description || '')).toLowerCase();
+    return kws.some(k => text.includes(k));
+  }).sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate)).slice(0, 8);
+  newsEl.innerHTML = matched.length ? matched.map(wireItemHtml).join('') :
+    '<p class="empty-note">No matching headlines fetched yet for these currencies.</p>';
+}
+
+document.getElementById('pmClose').addEventListener('click', closePairDetail);
+document.getElementById('pairModalBack').addEventListener('click', e => {
+  if (e.target.id === 'pairModalBack') closePairDetail();
+});
+
+document.getElementById('tfSelect').addEventListener('click', async e => {
+  const btn = e.target.closest('.tf-btn');
+  if (!btn || !modalPair) return;
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('is-active'));
+  btn.classList.add('is-active', 'is-loading');
+  document.getElementById('pmTfLabel').textContent = '(' + btn.textContent + ')';
+  document.getElementById('pmTechDetail').textContent = 'Fetching live price data…';
+
+  try{
+    const tech = await technicalReadForPair(modalPair.symbol, btn.dataset.tf);
+    const techBias = biasLabel(tech.score - 50);
+    const techBadge = document.getElementById('pmTechBadge');
+    techBadge.className = 'badge ' + techBias.cls;
+    techBadge.textContent = techBias.label;
+    document.getElementById('pmTechPct').textContent = `${tech.score}% buy / ${100 - tech.score}% sell`;
+    document.getElementById('pmTechDetail').textContent = tech.detail;
+
+    const hybridScore = Math.round((modalPair.buyPct + tech.score) / 2);
+    const hybridBias = biasLabel(hybridScore - 50);
+    const agree = (modalPair.buyPct >= 50) === (tech.score >= 50);
+    const hybridBadge = document.getElementById('pmHybridBadge');
+    hybridBadge.className = 'badge ' + hybridBias.cls;
+    hybridBadge.textContent = hybridBias.label + (agree ? '' : ' · mixed');
+    document.getElementById('pmHybridPct').textContent = `${hybridScore}% buy / ${100 - hybridScore}% sell`;
+  } catch(err){
+    document.getElementById('pmTechDetail').textContent =
+      "Couldn't fetch live price data this time — the free data source may be rate-limited. Try again in a moment.";
+    const techBadge = document.getElementById('pmTechBadge');
+    techBadge.className = 'badge neutral'; techBadge.textContent = '—';
+  } finally {
+    btn.classList.remove('is-loading');
+  }
+});
+
+/* ---------- position size calculator ---------- */
+
+const QUOTE_TO_USD_DEFAULT = {USD:1, EUR:1.08, GBP:1.26, JPY:0.0065, AUD:0.65, NZD:0.59, CAD:0.72, CHF:1.12};
+
+function updateQuoteRateDefault(){
+  const symbol = document.getElementById('rcPair').value;
+  const quote = symbol.slice(3);
+  document.getElementById('rcQuoteRate').value = QUOTE_TO_USD_DEFAULT[quote] ?? 1;
+}
+
+function computeRisk(){
+  const balance = parseFloat(document.getElementById('rcBalance').value) || 0;
+  const riskPct = parseFloat(document.getElementById('rcRiskPct').value) || 0;
+  const stopPips = parseFloat(document.getElementById('rcStopPips').value) || 0;
+  const lotUnits = parseFloat(document.getElementById('rcLotType').value) || 100000;
+  const symbol = document.getElementById('rcPair').value;
+  const quote = symbol.slice(3);
+  const quoteRate = parseFloat(document.getElementById('rcQuoteRate').value) || 1;
+
+  const pipSize = quote === 'JPY' ? 0.01 : 0.0001;
+  const pipValueUSD = pipSize * lotUnits * quoteRate;
+  const riskAmount = balance * (riskPct / 100);
+  const lots = (stopPips > 0 && pipValueUSD > 0) ? riskAmount / (stopPips * pipValueUSD) : 0;
+  const units = lots * lotUnits;
+
+  document.getElementById('rcRiskAmount').textContent = '$' + riskAmount.toFixed(2);
+  document.getElementById('rcPipValue').textContent = '$' + pipValueUSD.toFixed(2) + '/pip';
+  document.getElementById('rcLots').textContent = lots.toFixed(2) + ' lots';
+  document.getElementById('rcUnits').textContent = Math.round(units).toLocaleString() + ' units';
+}
+
+function initRiskCalc(){
+  const sel = document.getElementById('rcPair');
+  sel.innerHTML = CONFIG.PAIRS
+    .map(([b, q]) => `${b}${q}`).sort()
+    .map(sym => `<option value="${sym}">${sym.slice(0,3)}/${sym.slice(3)}</option>`).join('');
+  sel.addEventListener('change', () => { updateQuoteRateDefault(); computeRisk(); });
+  ['rcBalance','rcRiskPct','rcStopPips','rcLotType','rcQuoteRate'].forEach(id => {
+    document.getElementById(id).addEventListener('input', computeRisk);
+  });
+  updateQuoteRateDefault();
+  computeRisk();
+}
+
+initRiskCalc();
