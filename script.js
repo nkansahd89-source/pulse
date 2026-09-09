@@ -55,7 +55,13 @@ const CONFIG = {
     {name:'ForexLive', url:'https://www.forexlive.com/feed/news'},
     {name:'Investing.com', url:'https://www.investing.com/rss/news_1.rss'},
     {name:'FXStreet', url:'https://www.fxstreet.com/rss/news'},
-    {name:'Finance Magnates', url:'https://www.financemagnates.com/feed/'}
+    {name:'Finance Magnates', url:'https://www.financemagnates.com/feed/'},
+    {name:'Federal Reserve', url:'https://www.federalreserve.gov/feeds/press_monetary.xml', forceCurrency:'USD'},
+    {name:'BLS', url:'https://www.bls.gov/feed/bls_latest.rss', forceCurrency:'USD'},
+    {name:'Kitco', url:'https://www.kitco.com/news/category/mining/rss', forceAsset:'metals'},
+    {name:'CoinDesk', url:'https://www.coindesk.com/arc/outboundfeeds/rss/', forceAsset:'crypto'},
+    {name:'Cointelegraph', url:'https://cointelegraph.com/rss', forceAsset:'crypto'},
+    {name:'MarketWatch', url:'https://www.marketwatch.com/rss/topstories', forceAsset:'indices'}
   ],
 
   PROXIES: [
@@ -198,7 +204,11 @@ async function fetchAllNews(onSourceResult){
   const results = await Promise.allSettled(
     CONFIG.RSS_FEEDS.map(async feed => {
       const xml = await fetchWithFallback(feed.url);
-      const items = parseRSS(xml, feed.name);
+      const items = parseRSS(xml, feed.name).map(item => ({
+        ...item,
+        forceCurrency: feed.forceCurrency || null,
+        forceAsset: feed.forceAsset || null
+      }));
       onSourceResult && onSourceResult(feed.name, true, items.length);
       return items;
     })
@@ -254,17 +264,24 @@ function scoreNews(headlines){
     DOVISH_BEARISH_WORDS.forEach(w => { if (text.includes(w)) sentiment -= 1; });
 
     if (sentiment !== 0){
+      const matchedCurrencies = new Set();
       CONFIG.CURRENCIES.forEach(ccy => {
-        if (CCY_KEYWORDS[ccy].some(k => text.includes(k))){
-          acc[ccy].sum += sentiment;
-          acc[ccy].weight += 1;
-        }
+        if (CCY_KEYWORDS[ccy].some(k => text.includes(k))) matchedCurrencies.add(ccy);
+      });
+      // Single-topic official/specialist sources (Fed, BLS) are always about
+      // their currency even when the headline itself has no keyword match.
+      if (h.forceCurrency) matchedCurrencies.add(h.forceCurrency);
+      matchedCurrencies.forEach(ccy => {
+        acc[ccy].sum += sentiment;
+        acc[ccy].weight += 1;
       });
     }
 
     Object.keys(ASSET_KEYWORDS).forEach(key => {
       const lex = ASSET_KEYWORDS[key];
-      if (!lex.match.some(k => text.includes(k))) return;
+      const keywordMatch = lex.match.some(k => text.includes(k));
+      const forced = h.forceAsset === key;
+      if (!keywordMatch && !forced) return;
       let s = 0;
       lex.bullish.forEach(w => { if (text.includes(w)) s += 1; });
       lex.bearish.forEach(w => { if (text.includes(w)) s -= 1; });
@@ -517,7 +534,7 @@ function renderWireFull(){
   let items = [...state.news].sort((a,b) => new Date(b.pubDate) - new Date(a.pubDate));
   if (filter !== 'all'){
     const kws = CCY_KEYWORDS[filter] || [];
-    items = items.filter(h => kws.some(k => (h.title + ' ' + h.description).toLowerCase().includes(k)));
+    items = items.filter(h => h.forceCurrency === filter || kws.some(k => (h.title + ' ' + h.description).toLowerCase().includes(k)));
   }
   items = items.slice(0, 40);
   el.innerHTML = items.length ? items.map(wireItemHtml).join('') : '<p class="empty-note">No headlines match this filter yet.</p>';
@@ -789,6 +806,7 @@ function renderPairWhy(pair){
 
   const kws = [...CCY_KEYWORDS[pair.base], ...CCY_KEYWORDS[pair.quote]];
   const matched = state.news.filter(h => {
+    if (ccys.includes(h.forceCurrency)) return true;
     const text = (h.title + ' ' + (h.description || '')).toLowerCase();
     return kws.some(k => text.includes(k));
   }).sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate)).slice(0, 8);
