@@ -200,9 +200,18 @@ function parseRSS(xmlText, sourceName){
   }));
 }
 
+function sleep(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
+
+// Fetching all sources at the exact same instant tends to burst-trip the
+// free CORS proxies' rate limits (they're shared with everyone else using
+// them, not just this dashboard). Staggering the start of each feed's fetch
+// spreads that load out instead of hitting the proxy all at once.
+const FEED_STAGGER_MS = 350;
+
 async function fetchAllNews(onSourceResult){
   const results = await Promise.allSettled(
-    CONFIG.RSS_FEEDS.map(async feed => {
+    CONFIG.RSS_FEEDS.map(async (feed, i) => {
+      await sleep(i * FEED_STAGGER_MS);
       const xml = await fetchWithFallback(feed.url);
       const items = parseRSS(xml, feed.name).map(item => ({
         ...item,
