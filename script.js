@@ -64,10 +64,14 @@ const CONFIG = {
     {name:'MarketWatch', url:'https://www.marketwatch.com/rss/topstories', forceAsset:'indices'}
   ],
 
+  // api.codetabs.com shut down permanently in June 2026 (abuse-related
+  // shutdown, host no longer answers), and corsproxy.io now requires a paid
+  // API key for any non-localhost origin — both were silently dead weight.
+  // Replaced with two currently-active, no-signup alternatives.
   PROXIES: [
     url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-    url => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(url)}`,
-    url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`
+    url => `https://proxy.killcors.com/?url=${encodeURIComponent(url)}`,
+    url => `https://api.cors.lol/?url=${encodeURIComponent(url)}`
   ],
 
   CACHE_MINUTES: 20
