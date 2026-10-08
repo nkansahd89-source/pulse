@@ -64,10 +64,12 @@ const CONFIG = {
     {name:'MarketWatch', url:'https://www.marketwatch.com/rss/topstories', forceAsset:'indices'}
   ],
 
-  // api.codetabs.com shut down permanently in June 2026 (abuse-related
-  // shutdown, host no longer answers), and corsproxy.io now requires a paid
-  // API key for any non-localhost origin — both were silently dead weight.
-  // Replaced with two currently-active, no-signup alternatives.
+  // Your own Cloudflare Worker (see worker.js). Tried first: it only serves
+  // this dashboard and isn't shared with the rest of the internet.
+  WORKER_URL: 'https://wild-glitter-1bf1pulse-proxy.nkansahd89.workers.dev/',
+
+  // Public proxies, kept only as a last-resort fallback. codetabs shut down
+  // in June 2026 and corsproxy.io now needs a paid key, so both were removed.
   PROXIES: [
     url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
     url => `https://proxy.killcors.com/?url=${encodeURIComponent(url)}`,
@@ -164,15 +166,19 @@ function classifyEventDirection(title){
    ------------------------------------------------------------ */
 
 async function fetchWithFallback(url, timeoutMs = 9000){
-  const attempts = [() => fetch(url), ...CONFIG.PROXIES.map(p => () => fetch(p(url)))];
-  for (const attempt of attempts){
+  const attempts = [
+    u => CONFIG.WORKER_URL + '?url=' + encodeURIComponent(u),   // your own proxy first
+    u => u,                                                      // direct (works for the few sites that allow it)
+    ...CONFIG.PROXIES
+  ];
+  for (const makeUrl of attempts){
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try{
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      const res = await attempt();
-      clearTimeout(timer);
+      const res = await fetch(makeUrl(url), { signal: controller.signal });
       if (res && res.ok) return await res.text();
-    } catch(e){ /* try next */ }
+    } catch(e){ /* timed out or blocked: try the next route */ }
+    finally { clearTimeout(timer); }
   }
   throw new Error('unreachable: ' + url);
 }
